@@ -27,3 +27,4 @@ def fit_distributions(values: pd.Series) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["distribution", "params", "aic", "ks"])
     return pd.DataFrame(rows).sort_values("aic").reset_index(drop=True)
+

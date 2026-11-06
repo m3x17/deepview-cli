@@ -8,9 +8,24 @@ from deepview.distributions import fit_distributions
 from deepview import __version__
 from deepview.loader import load_data
 from deepview.summary import summarize
+from deepview.plots import show_histogram
 
 app = typer.Typer(help="Explore and compare data from the command line.")
 console = Console()
+
+def numeric_column(path: str, column: str) -> pd.Series:
+    try:
+        df = load_data(path)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1)
+    if column not in df.columns:
+        console.print(f"[red]Column not found: {column}[/red]")
+        raise typer.Exit(code=1)
+    if not pd.api.types.is_numeric_dtype(df[column]):
+        console.print(f"[red]Column is not numeric: {column}[/red]")
+        raise typer.Exit(code=1)
+    return df[column].dropna()
 
 
 @app.callback()
@@ -99,3 +114,18 @@ def purpose():
     " always looks so cool to view things at command line and it would be a fun" \
     " way to access data on CL and make someone who's not very comfortable with CL" \
     " to view and data.")
+
+@app.command()
+def hist(
+    path: str = typer.Argument(..., help="Path to a CSV or JSON file"),
+    column: str = typer.Option(..., "--column", "-c", help="Numeric column to plot"),
+    bins: int = typer.Option(20, "--bins", "-b", help="Number of bins"),
+    save: str = typer.Option(None, "--save", "-s", help="Save the plot to this file instead of opening a window"),
+):
+    values = numeric_column(path, column)
+    if values.empty:
+        console.print("[yellow]No values to plot.[/yellow]")
+        raise typer.Exit(code=1)
+    show_histogram(values, f"{column} ({len(values)} values)", bins, save)
+    if save:
+        console.print(f"Saved plot to {save}")
