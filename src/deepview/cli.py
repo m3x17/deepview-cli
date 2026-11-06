@@ -3,7 +3,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.markdown import Markdown
 import pandas as pd
+from pathlib import Path
 
+from deepview.storage import list_datasets, save_dataset
 from deepview.distributions import fit_distributions
 from deepview import __version__
 from deepview.loader import load_data
@@ -158,3 +160,32 @@ def export(
         raise typer.Exit(code=1)
 
     console.print(f"Exported {len(df)} rows and {len(df.columns)} columns to {output}")
+
+@app.command("import")
+def import_data(
+    path: str = typer.Argument(..., help="CSV or JSON file to store"),
+    name: str = typer.Option(None, "--name", "-n", help="Dataset name (defaults to the file name)"),
+    replace: bool = typer.Option(False, "--replace", help="Overwrite an existing dataset with the same name"),
+):
+    try:
+        df = load_data(path)
+        dataset_name = name or Path(path).stem
+        save_dataset(dataset_name, df, source=path, replace=replace)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"Imported {len(df)} rows and {len(df.columns)} columns as '{dataset_name}'")
+
+
+@app.command("list")
+def list_command():
+    datasets = list_datasets()
+    if datasets.empty:
+        console.print("[yellow]No datasets stored yet. Use 'deepview import <file>'.[/yellow]")
+        return
+    table = Table(title="Stored datasets")
+    for column_name in datasets.columns:
+        table.add_column(str(column_name))
+    for _, row in datasets.iterrows():
+        table.add_row(*[str(value) for value in row])
+    console.print(table)
