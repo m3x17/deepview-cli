@@ -9,6 +9,7 @@ from deepview import __version__
 from deepview.loader import load_data
 from deepview.summary import summarize
 from deepview.plots import show_histogram
+from deepview.exporter import export_data
 
 app = typer.Typer(help="Explore and compare data from the command line.")
 console = Console()
@@ -105,7 +106,7 @@ def dist(
     table.add_column("Parameters")
     for rank, row in fits.iterrows():
         params = ", ".join(f"{p:.3f}" for p in row["params"])
-        table.add_row(str(rank + 1), row["distribution"], f"{row['aic']:.1f}", f"{row['ks']:.3f}", params)
+        table.add_row(str(rank + 1), row["distribution"], f"{row['aic']:.1f}", f"{row['ks']:.3f}", params) # type: ignore
     console.print(table)
 
 @app.command()
@@ -129,3 +130,31 @@ def hist(
     show_histogram(values, f"{column} ({len(values)} values)", bins, save)
     if save:
         console.print(f"Saved plot to {save}")
+
+@app.command()
+def export(
+    path: str = typer.Argument(..., help="Input CSV or JSON file"),
+    output: str = typer.Option(..., "--output", "-o", help="Output file ending in .csv or .json"),
+    columns: str = typer.Option(None, "--columns", help="Comma-separated columns to keep"),
+):
+    try:
+        df = load_data(path)
+    except (FileNotFoundError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1)
+
+    if columns:
+        wanted = [name.strip() for name in columns.split(",")]
+        missing = [name for name in wanted if name not in df.columns]
+        if missing:
+            console.print(f"[red]Columns not found: {', '.join(missing)}[/red]")
+            raise typer.Exit(code=1)
+        df = df[wanted]
+
+    try:
+        export_data(df, output)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"Exported {len(df)} rows and {len(df.columns)} columns to {output}")
