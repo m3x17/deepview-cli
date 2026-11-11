@@ -57,3 +57,17 @@ def list_datasets() -> pd.DataFrame:
         return pd.read_sql_query(
             "SELECT name, source, rows, columns, imported_at FROM datasets ORDER BY imported_at", conn
         )
+
+def stored_names() -> list[str]:
+    with connect() as conn:
+        rows = conn.execute("SELECT name FROM datasets").fetchall()
+    return [row[0] for row in rows]
+
+
+def load_stored(name: str) -> pd.DataFrame:
+    validate_name(name)
+    with connect() as conn:
+        exists = conn.execute("SELECT 1 FROM datasets WHERE name = ?", (name,)).fetchone()
+        if not exists:
+            raise FileNotFoundError(f"No stored dataset named: {name}")
+        return pd.read_sql_query(f'SELECT * FROM "{name}"', conn)

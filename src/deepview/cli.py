@@ -5,6 +5,7 @@ from rich.markdown import Markdown
 import pandas as pd
 from pathlib import Path
 
+from deepview.datasource import load_source
 from deepview.storage import list_datasets, save_dataset
 from deepview.distributions import fit_distributions
 from deepview import __version__
@@ -18,7 +19,7 @@ console = Console()
 
 def numeric_column(path: str, column: str) -> pd.Series:
     try:
-        df = load_data(path)
+        df = load_source(path)
     except (FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1)
@@ -42,55 +43,42 @@ def version():
 
 
 @app.command()
-def summary(path: str = typer.Argument(..., help="Path to a CSV or JSON file")):
+def summary(path: str = typer.Argument(..., help="File path or stored dataset name")):
     try:
-        df = load_data(path)
+        df = load_source(path)
     except (FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1)
 
-    try:
-        stats = summarize(df)
-        if stats.empty:
-            console.print("[yellow]No numeric columns found.[/yellow]")
-            raise typer.Exit(code=1)
-        
-        table = Table(title=f"Summary of {path} ({len(df)} rows)")
-        for name in stats.columns:
-            table.add_column(str(name), justify="left" if name == "column" else "right")
-        for _, row in stats.iterrows():
-            cells = [str(row["column"])]
-            for name in stats.columns[1:]:
-                value = row[name]
-                cells.append(f"{int(value)}" if name in ("count", "missing") else f"{value:.2f}")
-            table.add_row(*cells)
-        console.print(table)
-    except:   
-        text_content = df["content"].iloc[0]
-        
-        console.rule(f"[bold blue]{path}[/bold blue]")
-        console.print(Markdown(text_content))
-        console.rule()
+    if df.select_dtypes(include="number").empty:
+        if "content" in df.columns:
+            console.rule(f"[bold blue]{path}[/bold blue]")
+            console.print(Markdown(str(df["content"].iloc[0])))
+            console.rule()
+            return
+        console.print("[yellow]No numeric columns found.[/yellow]")
+        raise typer.Exit(code=1)
+
+    stats = summarize(df)
+    table = Table(title=f"Summary of {path} ({len(df)} rows)")
+    for name in stats.columns:
+        table.add_column(str(name), justify="left" if name == "column" else "right")
+    for _, row in stats.iterrows():
+        cells = [str(row["column"])]
+        for name in stats.columns[1:]:
+            value = row[name]
+            cells.append(f"{int(value)}" if name in ("count", "missing") else f"{value:.2f}")
+        table.add_row(*cells)
+    console.print(table)
 
     
+
 @app.command()
 def dist(
-    path: str = typer.Argument(..., help="Path to a CSV or JSON file"),
+    path: str = typer.Argument(..., help="File path or stored dataset name"),
     column: str = typer.Option(..., "--column", "-c", help="Numeric column to fit"),
 ):
-    try:
-        df = load_data(path)
-    except (FileNotFoundError, ValueError) as error:
-        console.print(f"[red]{error}[/red]")
-        raise typer.Exit(code=1)
-
-    if column not in df.columns:
-        console.print(f"[red]Column not found: {column}[/red]")
-        raise typer.Exit(code=1)
-    if not pd.api.types.is_numeric_dtype(df[column]):
-        console.print(f"[red]Column is not numeric: {column}[/red]")
-        raise typer.Exit(code=1)
-    values = df[column].dropna()
+    values = numeric_column(path, column)
     if len(values) < 10:
         console.print("[red]Need at least 10 values to fit distributions.[/red]")
         raise typer.Exit(code=1)
@@ -108,7 +96,7 @@ def dist(
     table.add_column("Parameters")
     for rank, row in fits.iterrows():
         params = ", ".join(f"{p:.3f}" for p in row["params"])
-        table.add_row(str(rank + 1), row["distribution"], f"{row['aic']:.1f}", f"{row['ks']:.3f}", params) # type: ignore
+        table.add_row(str(rank + 1), row["distribution"], f"{row['aic']:.1f}", f"{row['ks']:.3f}", params)
     console.print(table)
 
 @app.command()
@@ -140,7 +128,7 @@ def export(
     columns: str = typer.Option(None, "--columns", help="Comma-separated columns to keep"),
 ):
     try:
-        df = load_data(path)
+        df = load_source(path)
     except (FileNotFoundError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1)
